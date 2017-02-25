@@ -1,0 +1,95 @@
+#!/bin/bash
+
+SERVER=
+USER=
+FOLDER=
+WEBFOLDER=
+
+OPTIND=1
+QUIET_MODE=0
+
+#With the help of https://github.com/crescentrose/puush4linux
+function show_help {
+    echo 'screenshoot v0.1 - screenshot uploading and "self-hosting"'
+    echo "Usage: screenshoot <OPTIONS> <FILENAME>"
+    echo "Options:"
+    echo " -q       Does not show any notification via libnotify."
+    echo " -h       Displays this help."
+    echo " -a       Takes an area screenshot and uploads it."
+    echo " -f       Takes a fullscreen screenshot and uploads it."
+    echo " -w       Takes a screenshot of the active window and uploads it."
+    echo "Examples: "
+    echo " screenshoot -a  Takes an area screenshot, uploads it and puts the URL into clipboard"
+    echo " screenshoot -f  Takes a fullscreen screenshot, uploads it and puts the URL into clipboard."
+    exit 0
+}
+
+
+while getopts "h?qchafwl" opt; do
+    case "$opt" in
+    h|\?)
+        show_help
+        exit 0
+        ;;
+    q)  QUIET_MODE=1
+        ;;
+    a)  SCREENSHOOT_MODE=a
+        ;;
+    f)  SCREENSHOOT_MODE=f
+        ;;
+    w)  SCREENSHOOT_MODE=w
+        ;;
+    esac
+done
+
+
+shift $((OPTIND-1))
+[ "$1" = "--" ] && shift
+
+FILENAME=$@
+
+# Disable notifications if notify-send is not available.
+if hash notify-send 2>/dev/null; then
+    QUIET_MODE=0
+else
+    QUIET_MODE=1
+fi
+
+# Sanity check
+if [[ -z "$SCREENSHOOT_MODE" ]] && [[ -z "$FILENAME" ]]; then
+    show_help
+    exit 0
+fi
+
+# Generate a file name
+if [[ -z $FILENAME ]]; then
+    FILENAME="ss-`date '+%d-%m-%Y-%H%M%S'`.png"
+fi
+
+# Take the screenshot if necessary.
+case $SCREENSHOOT_MODE in
+    a) scrot -b -q 90 -s "/tmp/"$FILENAME;;
+    w) scrot -b -q 90 -u "/tmp/"$FILENAME;;
+    f) scrot -b -q 90 "/tmp/"$FILENAME;;
+esac
+
+# Notify the user that the upload is in progress.
+if [[ "$QUIET_MODE" != "1" ]]; then
+    notify-send --urgency=low "Screenshoot" "Uploading file..."
+fi
+
+
+SAVE_PATH=$FOLDER$WEBFOLDER$FILENAME
+scp "/tmp/"$FILENAME $USER@$SERVER:$SAVE_PATH
+url="http://"$SERVER"/"$WEBFOLDER$FILENAME
+
+ssh $USER@$SERVER chmod +r $SAVE_PATH && echo $url | xclip -sel clip
+
+if [[ "$QUIET_MODE" != "1" ]]; then
+    notify-send "Screenshoot" "File Uploaded"
+fi
+
+# Clean up the temporary screenshot file if it was temporary.
+if [[ ! -z $SCREENSHOOT_MODE ]]; then
+    rm "/tmp/"$FILENAME
+fi
